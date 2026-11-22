@@ -13,6 +13,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -66,6 +67,10 @@ import java.util.Map;
 public class PlayerActivity extends AppCompatActivity {
 
     private static final long BARS_HIDE_DELAY = 5000L;
+    /** 关怀模式：信息条多留一会儿，老人看字慢，5 秒来不及读完。 */
+    private static final long BARS_HIDE_DELAY_CARE = 10000L;
+    private static final long TOAST_DELAY = 2600L;
+    private static final long TOAST_DELAY_CARE = 4200L;
     private static final long LOAD_TIMEOUT = 18000L;
 
     public static void start(Context context, String channelName) {
@@ -85,6 +90,7 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean panelOpen;
     private boolean errorVisible;
     private boolean loadingVisible;
+    private boolean care;
 
     private AspectFrame aspect;
     private SurfaceView surface;
@@ -104,6 +110,7 @@ public class PlayerActivity extends AppCompatActivity {
     private TextView tvError;
     private TextView tvToast;
     private TextView tvPanelTitle;
+    private TextView tvPanelHint;
     private View vProgress;
     private RecyclerView rvPanel;
     private Adapters.PanelChannelAdapter panelAdapter;
@@ -146,6 +153,7 @@ public class PlayerActivity extends AppCompatActivity {
         bindViews();
         setupPanel();
         applyAspect();
+        applyCareMode();
 
         String name = getIntent() == null ? null : getIntent().getStringExtra("channel");
         if (name == null || name.trim().isEmpty()) {
@@ -220,6 +228,7 @@ public class PlayerActivity extends AppCompatActivity {
         tvError = findViewById(R.id.tvError);
         tvToast = findViewById(R.id.tvToast);
         tvPanelTitle = findViewById(R.id.tvPanelTitle);
+        tvPanelHint = findViewById(R.id.tvPanelHint);
         vProgress = findViewById(R.id.vProgress);
         rvPanel = findViewById(R.id.rvPanel);
 
@@ -311,6 +320,11 @@ public class PlayerActivity extends AppCompatActivity {
 
             @Override
             public void onLongClick(Channel c) {
+                // 关怀模式下关掉长按收藏：老人容易把“按住 OK”当成“按一下”，
+                // 一抖就把常看的台取消收藏了。
+                if (care) {
+                    return;
+                }
                 Prefs.toggleFavorite(c.standardName);
                 panelAdapter.notifyDataSetChanged();
                 showToast(Prefs.isFavorite(c.standardName) ? "已收藏" : "已取消收藏");
@@ -613,7 +627,7 @@ public class PlayerActivity extends AppCompatActivity {
         refreshInfo();
         handler.removeCallbacks(hideBarsTask);
         if (!keep && !errorVisible) {
-            handler.postDelayed(hideBarsTask, BARS_HIDE_DELAY);
+            handler.postDelayed(hideBarsTask, care ? BARS_HIDE_DELAY_CARE : BARS_HIDE_DELAY);
         }
     }
 
@@ -632,7 +646,7 @@ public class PlayerActivity extends AppCompatActivity {
         tvToast.setText(text);
         tvToast.setVisibility(View.VISIBLE);
         handler.removeCallbacks(hideToastTask);
-        handler.postDelayed(hideToastTask, 2600);
+        handler.postDelayed(hideToastTask, care ? TOAST_DELAY_CARE : TOAST_DELAY);
     }
 
     private final Runnable hideToastTask = new Runnable() {
@@ -695,14 +709,64 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 关怀模式：把「要看清的字」放大，把「可以不要的字」收起来。
+     * 面板 380dp→520dp、条目 52dp→80dp / 14sp→24sp，信息条字号整体上一档，
+     * 底栏去掉“接下来”只留当前节目，减少屏幕上的信息量。
+     */
+    private void applyCareMode() {
+        care = Prefs.careMode();
+        if (panelAdapter != null) {
+            panelAdapter.setLarge(care);
+        }
+        if (!care) {
+            return;
+        }
+        ViewGroup.LayoutParams lp = channelPanel.getLayoutParams();
+        if (lp != null) {
+            lp.width = Ui.dp(this, 520);
+            channelPanel.setLayoutParams(lp);
+        }
+        tvPanelTitle.setTextSize(24);
+        if (tvPanelHint != null) {
+            tvPanelHint.setText("上下键选择 · OK 播放 · 返回关闭");
+            tvPanelHint.setTextSize(16);
+        }
+        tvChanNo.setTextSize(17);
+        tvChanName.setTextSize(30);
+        tvClock.setTextSize(20);
+        tvNowTitle.setTextSize(23);
+        tvNowTime.setTextSize(18);
+        tvNext.setVisibility(View.GONE);
+        tvLoading.setTextSize(18);
+        tvError.setTextSize(16);
+        tvToast.setTextSize(21);
+        tvToast.setPadding(Ui.dp(this, 22), Ui.dp(this, 12), Ui.dp(this, 22), Ui.dp(this, 12));
+    }
+
     // ---------------- 频道面板 ----------------
 
     private void openPanel() {
+        openPanel(false);
+    }
+
+    /**
+     * @param withInfo true 表示同时亮出信息条（OK 键走这条）。
+     *                 面板占右侧整高，底栏会和它叠在一起，所以只保留顶部信息条。
+     */
+    private void openPanel(boolean withInfo) {
         if (channel == null) {
             return;
         }
         panelOpen = true;
-        hideBars();
+        handler.removeCallbacks(hideBarsTask);
+        if (withInfo) {
+            topBar.setVisibility(View.VISIBLE);
+            bottomBar.setVisibility(View.GONE);
+            refreshInfo();
+        } else {
+            hideBars();
+        }
         channelPanel.setVisibility(View.VISIBLE);
         panelAdapter.submit(ChannelRepository.all(),
                 ChannelAlias.key(channel.standardName));
@@ -748,12 +812,20 @@ public class PlayerActivity extends AppCompatActivity {
 
         if (panelOpen) {
             if (code == KeyEvent.KEYCODE_BACK) {
+                // 返回：收起面板，同时把信息条收掉，画面干净
                 closePanel();
+                handler.removeCallbacks(hideBarsTask);
+                hideBars();
                 return true;
             }
             if (code == KeyEvent.KEYCODE_MENU) {
                 closePanel();
                 showOptions();
+                return true;
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_LEFT) {
+                // 右键呼出、再按一次收起，和“回到画面”的直觉一致
+                closePanel();
                 return true;
             }
             return super.dispatchKeyEvent(event);
@@ -774,11 +846,15 @@ public class PlayerActivity extends AppCompatActivity {
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
-                if (topBar.getVisibility() == View.VISIBLE) {
-                    hideBars();
-                } else {
-                    showBars();
-                }
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                // OK 键：一次同时做两件事——亮出信息条 + 呼出频道面板。
+                // 面板打开时 OK 归列表（播放选中的台），见上面的 panelOpen 分支。
+                openPanel(true);
+                return true;
+            case KeyEvent.KEYCODE_INFO:
+                // 部分遥控器带“信息/INFO”键，单独用它切换信息条
+                toggleBars();
                 return true;
             case KeyEvent.KEYCODE_MENU:
                 showOptions();
@@ -792,6 +868,15 @@ public class PlayerActivity extends AppCompatActivity {
                 return true;
             default:
                 return super.dispatchKeyEvent(event);
+        }
+    }
+
+    private void toggleBars() {
+        if (topBar.getVisibility() == View.VISIBLE) {
+            handler.removeCallbacks(hideBarsTask);
+            hideBars();
+        } else {
+            showBars();
         }
     }
 

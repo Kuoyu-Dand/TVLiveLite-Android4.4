@@ -1,5 +1,6 @@
 package com.mytv.lite.ui.adapter;
 
+import android.content.Context;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -278,9 +279,26 @@ public final class Adapters {
         private final List<Channel> items = new ArrayList<Channel>();
         private final OnChannelAction action;
         private String currentKey;
+        private boolean large;
 
         public PanelChannelAdapter(OnChannelAction action) {
             this.action = action;
+        }
+
+        /**
+         * 关怀模式：行高与字号一起放大。遥控器按得慢、看得远，
+         * 只放大字体不放大行高，反而更挤。
+         */
+        public void setLarge(boolean large) {
+            if (this.large == large) {
+                return;
+            }
+            this.large = large;
+            notifyDataSetChanged();
+        }
+
+        public boolean isLarge() {
+            return large;
         }
 
         public void submit(List<Channel> list, String currentKey) {
@@ -319,6 +337,7 @@ public final class Adapters {
             holder.tvName.setText(isCurrent ? "▶ " + c.name : c.name);
             holder.tvFav.setVisibility(Prefs.isFavorite(c.standardName)
                     ? View.VISIBLE : View.GONE);
+            applySize(holder);
             holder.itemView.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -338,12 +357,29 @@ public final class Adapters {
             });
         }
 
+        private void applySize(VH holder) {
+            Context context = holder.itemView.getContext();
+            holder.tvNo.setTextSize(large ? 18 : 11);
+            holder.tvName.setTextSize(large ? 24 : 14);
+            holder.tvFav.setTextSize(large ? 18 : 11);
+            ViewGroup.LayoutParams lp = holder.itemView.getLayoutParams();
+            if (lp == null) {
+                return;
+            }
+            lp.height = Ui.dp(context, large ? 80 : 52);
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ((ViewGroup.MarginLayoutParams) lp).bottomMargin =
+                        Ui.dp(context, large ? 8 : 4);
+            }
+            holder.itemView.setLayoutParams(lp);
+        }
+
         @Override
         public int getItemCount() {
             return items.size();
         }
 
-        static class VH extends RecyclerView.ViewHolder {
+        public static class VH extends RecyclerView.ViewHolder {
             final TextView tvNo;
             final TextView tvName;
             final TextView tvFav;
