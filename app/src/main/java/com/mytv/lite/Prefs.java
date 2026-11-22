@@ -29,6 +29,8 @@ public final class Prefs {
     public static final String K_BOOT = "boot";
     public static final String K_SHOW_LOGO = "show_logo";
     public static final String K_EPG_ON = "epg_on";
+    public static final String K_AUTOPLAY = "autoplay_last";   // 打开软件直进上次频道
+    public static final String K_CARE = "care_mode";           // 关怀模式：大字号 + 界面从简
     public static final String K_LAST_CHANNEL = "last_channel";
     public static final String K_LAST_GROUP = "last_group";
 
@@ -228,5 +230,45 @@ public final class Prefs {
 
     public static boolean epgEnabled() {
         return getBool(K_EPG_ON, true);
+    }
+
+    // ---------------- 直进播放 / 关怀模式 ----------------
+
+    /** 打开软件后直接播放上次关闭时的频道（跳过首页）。 */
+    public static boolean autoPlayLast() {
+        return getBool(K_AUTOPLAY, false);
+    }
+
+    public static void setAutoPlayLast(boolean value) {
+        putBool(K_AUTOPLAY, value);
+    }
+
+    /** 关怀模式：照顾老年视力，字号放大、界面从简。 */
+    public static boolean careMode() {
+        return getBool(K_CARE, false);
+    }
+
+    public static void setCareMode(boolean value) {
+        putBool(K_CARE, value);
+    }
+
+    /** 上次播放过的频道名（关闭播放器时写入），没有则返回空串。 */
+    public static String lastChannel() {
+        String name = getString(K_LAST_CHANNEL, "");
+        return name == null ? "" : name.trim();
+    }
+
+    public static boolean hasLastChannel() {
+        return lastChannel().length() > 0;
+    }
+
+    /** 是否至少配置了一个可用的直播源——没有源时直进播放只会弹出错误，不如留在首页。 */
+    public static boolean hasEnabledIptvSource() {
+        for (IptvSource source : getIptvSources()) {
+            if (source.enabled && source.url != null && !source.url.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 }

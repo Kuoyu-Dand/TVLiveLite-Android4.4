@@ -43,6 +43,7 @@ public class DashboardFragment extends Fragment {
 
     private Adapters.ChannelAdapter recentAdapter;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean care;
 
     private final Runnable ticker = new Runnable() {
         @Override
@@ -99,10 +100,25 @@ public class DashboardFragment extends Fragment {
         });
         rvRecent.setAdapter(recentAdapter);
 
+        applyCareMode();
         buildNav();
         updateClock();
         refresh();
         loadChannels(false);
+    }
+
+    /** 关怀模式：首页也放大字号、图标，远看电视不费眼。 */
+    private void applyCareMode() {
+        care = Prefs.careMode();
+        if (!care) {
+            return;
+        }
+        tvSourceName.setTextSize(18);
+        tvDate.setTextSize(17);
+        tvClock.setTextSize(25);
+        tvHeroTitle.setTextSize(32);
+        tvHeroSub.setTextSize(18);
+        tvRecentLabel.setTextSize(17);
     }
 
     private void open(Fragment fragment) {
@@ -162,7 +178,15 @@ public class DashboardFragment extends Fragment {
 
                 TextView label = card.findViewById(R.id.tvLabel);
                 label.setText(navs[index][0]);
+                label.setTextSize(care ? 19 : 13);
                 ImageView icon = card.findViewById(R.id.ivIcon);
+                int iconSize = Ui.dp(getActivity(), care ? 36 : 26);
+                ViewGroup.LayoutParams iconLp = icon.getLayoutParams();
+                if (iconLp != null) {
+                    iconLp.width = iconSize;
+                    iconLp.height = iconSize;
+                    icon.setLayoutParams(iconLp);
+                }
                 try {
                     icon.setImageDrawable(AppCompatResources.getDrawable(getActivity(),
                             icons[index]));

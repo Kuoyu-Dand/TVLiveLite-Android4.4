@@ -81,6 +81,26 @@ public class SettingsFragment extends Fragment {
     private void buildRows() {
         rows.clear();
 
+        add("关怀模式", Prefs.careMode() ? "开" : "关",
+                Prefs.careMode()
+                        ? "频道面板与信息条已放大，界面从简；关闭后恢复常规字号"
+                        : "照顾老年视力：面板字号放大、界面从简，适合长辈使用",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        toggleCareMode();
+                    }
+                });
+        add("打开软件直接播放", Prefs.autoPlayLast() ? "开" : "关",
+                "开启后打开软件跳过首页，直接播放上次关闭时的频道",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        Prefs.setAutoPlayLast(!Prefs.autoPlayLast());
+                        buildRows();
+                    }
+                });
+
         add("直播源管理", countIptv() + " 个源", "支持 m3u（#EXTM3U）与 txt（#genre#）",
                 new View.OnClickListener() {
                     @Override
@@ -244,6 +264,28 @@ public class SettingsFragment extends Fragment {
     private void open(Fragment fragment) {
         if (getActivity() instanceof MainActivity) {
             ((MainActivity) getActivity()).show(fragment, true);
+        }
+    }
+
+    /**
+     * 关怀模式：一次开关同时把「大字号」和「直进上次频道」都打开，
+     * 长辈只要按一下遥控器，不用再单独记第二个开关。
+     */
+    private void toggleCareMode() {
+        boolean on = !Prefs.careMode();
+        Prefs.setCareMode(on);
+        if (on) {
+            boolean autoPlay = Prefs.autoPlayLast();
+            Prefs.setAutoPlayLast(true);
+            buildRows();
+            if (autoPlay) {
+                Ui.toast(getActivity(), "关怀模式已开启：字号放大、界面从简");
+            } else {
+                Ui.toast(getActivity(), "关怀模式已开启，并同时打开了“打开软件直接播放”");
+            }
+        } else {
+            buildRows();
+            Ui.toast(getActivity(), "已退出关怀模式");
         }
     }
 
@@ -450,6 +492,10 @@ public class SettingsFragment extends Fragment {
         @Override
         public void onBindViewHolder(@NonNull VH holder, int position) {
             final Row row = rows.get(position);
+            boolean care = Prefs.careMode();
+            holder.title.setTextSize(care ? 21 : 16);
+            holder.value.setTextSize(care ? 19 : 14);
+            holder.sub.setTextSize(care ? 16 : 12);
             holder.title.setText(row.title);
             if (row.value == null || row.value.isEmpty()) {
                 holder.value.setVisibility(View.GONE);
