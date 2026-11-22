@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0B0B0D</color>
+    <color name="surface">#17171A</color>
+    <color name="surface_2">#212126</color>
+    <color name="surface_3">#2B2B31</color>
+    <color name="stroke">#32323A</color>
+
+    <color name="accent">#B9C0F5</color>
+    <color name="accent_dim">#8D95CF</color>
+
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#8E8E99</color>
+    <color name="text_tertiary">#5E5E68</color>
+
+    <color name="focus_bg">#FFFFFF</color>
+    <color name="focus_text">#0B0B0D</color>
+    <color name="focus_text_sub">#5A5A66</color>
+
+    <color name="scrim">#CC000000</color>
+    <color name="transparent">#00000000</color>
+    <color name="live_red">#F56B6B</color>
+</resources>
