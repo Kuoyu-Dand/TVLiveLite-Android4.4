@@ -1,0 +1,17 @@
+# 统一换行符为 LF，Windows 脚本保持 CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew text eol=lf
+*.sh text eol=lf
+
+# 二进制资源
+*.apk binary
+*.jar binary
+*.jks binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.ttf binary
+*.zip binary
+*.gz binary

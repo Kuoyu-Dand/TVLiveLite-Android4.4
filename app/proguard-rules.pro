@@ -1,0 +1,4 @@
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn com.google.android.exoplayer2.**
+-keep class com.mytv.lite.data.** { *; }
