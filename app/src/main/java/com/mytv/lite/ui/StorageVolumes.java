@@ -92,6 +92,11 @@ public final class StorageVolumes {
     }
 
     private static void collectFromStorageManager(Context context, Map<String, Volume> map) {
+        // getStorageVolumes / isRemovable 都是 API 24 才有的，4.1~4.3 上
+        // 这条路径根本不存在，直接交给 /proc/mounts 与厂商路径去枚举
+        if (Build.VERSION.SDK_INT < 24) {
+            return;
+        }
         try {
             StorageManager sm = (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
             if (sm == null) {
@@ -108,11 +113,9 @@ public final class StorageVolumes {
                 }
                 String label = null;
                 try {
-                    if (Build.VERSION.SDK_INT >= 24) {
-                        CharSequence desc = v.getDescription(context);
-                        if (desc != null && desc.length() > 0) {
-                            label = desc.toString();
-                        }
+                    CharSequence desc = v.getDescription(context);
+                    if (desc != null && desc.length() > 0) {
+                        label = desc.toString();
                     }
                 } catch (Throwable ignored) {
                 }

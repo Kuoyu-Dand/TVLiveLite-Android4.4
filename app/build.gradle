@@ -6,14 +6,14 @@ android {
 
     defaultConfig {
         applicationId "com.mytv.lite"
-        // 关键：最低支持 Android 4.4 (API 19)
-        minSdk 19
+        // 兼容线：最低支持 Android 4.1 (API 16)，覆盖 4.1 ~ 4.3 的老盒子
+        minSdk 16
         // 老设备用 targetSdk 28：可继续使用传统存储、无分区存储/通知权限等新限制
         targetSdk 28
-        versionCode 6
-        versionName "1.0.5"
+        versionCode 7
+        versionName "1.0.6"
 
-        // ExoPlayer + AppCompat 方法数超过 64K，API 19 需要 legacy multidex
+        // ExoPlayer + AppCompat 方法数超过 64K，API 21 以下都需要 legacy multidex
         multiDexEnabled true
 
         vectorDrawables.useSupportLibrary = true
@@ -70,7 +70,7 @@ android {
 
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "MyTVLite-${variant.versionName}-sdk19-${variant.buildType.name}.apk"
+            outputFileName = "MyTVLite-${variant.versionName}-sdk16-${variant.buildType.name}.apk"
         }
     }
 }
