@@ -2,6 +2,30 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，版本号格式 `主.次.修`。
 
+## [1.0.7] - 2026-11-24
+
+### 修复
+
+- **修「有声音、画面全黑」**：部分 Android 4.1~4.3 的老盒子（Amlogic / Rockchip 早期固件）上，
+  解码器初始化成功、音频正常出声，但 SurfaceView 那一层永远是黑的。
+  以前遇到这种情况只能自己去设置里换内核碰运气，现在会自动救：
+
+  - **首帧看门狗**：ExoPlayer 播到 READY 后 8 秒，如果一帧画面都没渲染出来（`onRenderedFirstFrame` 没回调），
+    自动把渲染方式换成 TextureView（走 GPU 合成，绕开老 SurfaceFlinger 的图层问题），并记进设置
+  - 换了渲染还不出画，再 8 秒自动切到系统播放器（MediaPlayer 走另一套 ACodec 路径）
+  - 切换时右下角会提示一句，不会静默黑屏
+
+### 新增
+
+- 设置 → 播放 → **画面渲染**：自动（推荐）/ 性能优先（SurfaceView）/ 兼容（TextureView）
+- 渲染视图改为运行时创建，SurfaceView 与 TextureView 可以和两种内核自由组合
+
+### 变更
+
+- 版本 1.0.7 / `versionCode` 8，产物 `MyTVLite-1.0.7-sdk16-release.apk`
+
+---
+
 ## [1.0.6] - 2026-11-24
 
 **兼容线**：功能与 1.0.5 完全一致，只把最低系统从 Android 4.4 降到 **Android 4.1（API 16）**，
@@ -91,6 +115,7 @@
 
 | 版本 | versionCode | 最低系统 | 产物 |
 | --- | --- | --- | --- |
+| 1.0.7 | 8 | Android 4.1 (API 16) | `MyTVLite-1.0.7-sdk16-release.apk`（兼容线） |
 | 1.0.6 | 7 | Android 4.1 (API 16) | `MyTVLite-1.0.6-sdk16-release.apk`（兼容线） |
 | 1.0.5 | 6 | Android 4.4 (API 19) | `MyTVLite-1.0.5-sdk19-release.apk` |
 | 1.0.4 | 5 | Android 4.4 (API 19) | `MyTVLite-1.0.4-sdk19-release.apk` |
