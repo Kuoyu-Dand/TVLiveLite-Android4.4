@@ -141,6 +141,14 @@ public class SettingsFragment extends Fragment {
                         chooseDecode();
                     }
                 });
+        add("画面渲染", renderName(),
+                "有声音没画面时切到「兼容」试试，仍不行就换系统播放器",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        chooseRender();
+                    }
+                });
         add("画面比例", aspectName(), null, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -298,6 +306,35 @@ public class SettingsFragment extends Fragment {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         Prefs.putString(Prefs.K_KERNEL, which == 1 ? "sys" : "exo");
+                        dialog.dismiss();
+                        buildRows();
+                    }
+                })
+                .show();
+    }
+
+    private String renderName() {
+        String mode = Prefs.renderMode();
+        if ("texture".equals(mode)) {
+            return "兼容（TextureView）";
+        }
+        if ("surface".equals(mode)) {
+            return "性能优先（SurfaceView）";
+        }
+        return "自动（黑屏时自己换）";
+    }
+
+    private void chooseRender() {
+        final String[] items = {"自动（推荐，检测到黑屏自动换）",
+                "性能优先（SurfaceView）", "兼容（TextureView，有声音没画面时选它）"};
+        String mode = Prefs.renderMode();
+        int checked = "surface".equals(mode) ? 1 : "texture".equals(mode) ? 2 : 0;
+        new AlertDialog.Builder(getActivity(), R.style.DialogTheme)
+                .setTitle("画面渲染")
+                .setSingleChoiceItems(items, checked, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Prefs.setRenderMode(which == 1 ? "surface" : which == 2 ? "texture" : "auto");
                         dialog.dismiss();
                         buildRows();
                     }

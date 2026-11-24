@@ -12,6 +12,7 @@ import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -61,10 +62,14 @@ import java.util.Map;
 
 /**
  * 直播播放页。
- * 只用一个 SurfaceView，ExoPlayer 与系统 MediaPlayer 两种内核共用，
- * 这样老盒子上的解码器差异可以通过设置切换来绕过。
+ * 画面渲染视图（SurfaceView / TextureView）与 ExoPlayer、系统 MediaPlayer 两种内核解耦，
+ * 这样老盒子上「有声无画」的情况可以靠换渲染方式或换内核绕过去。
  */
 public class PlayerActivity extends AppCompatActivity {
+
+    /** 渲染方式：SurfaceView 走独立图层，性能好；TextureView 走 GPU 合成，兼容性好。 */
+    private static final int RENDER_SURFACE = 0;
+    private static final int RENDER_TEXTURE = 1;
 
     private static final long BARS_HIDE_DELAY = 5000L;
     /** 关怀模式：信息条多留一会儿，老人看字慢，5 秒来不及读完。 */
@@ -72,6 +77,11 @@ public class PlayerActivity extends AppCompatActivity {
     private static final long TOAST_DELAY = 2600L;
     private static final long TOAST_DELAY_CARE = 4200L;
     private static final long LOAD_TIMEOUT = 18000L;
+    /**
+     * 首帧超时：音频已经在走、但一帧画面都没渲染出来的机器，
+     * 8 秒后自动换一种渲染方式，而不是让用户对着黑屏干等。
+     */
+    private static final long FIRST_FRAME_TIMEOUT = 8000L;
 
     public static void start(Context context, String channelName) {
         Intent intent = new Intent(context, PlayerActivity.class);
@@ -94,6 +104,14 @@ public class PlayerActivity extends AppCompatActivity {
 
     private AspectFrame aspect;
     private SurfaceView surface;
+    private TextureView texture;
+    private int renderKind = RENDER_SURFACE;
+    /** ExoPlayer 是否已经真的把第一帧画到屏幕上——有声无画就是它一直是 false。 */
+    private boolean firstFrameRendered;
+    /** 自动回退到系统内核后置位，避免在 startPlayback 里又被 Exo 抢回去。 */
+    private boolean forceSystemKernel;
+    private String currentUrl;
+    private String currentUa;
     private FrameLayout root;
     private LinearLayout topBar;
     private LinearLayout bottomBar;
@@ -212,7 +230,7 @@ public class PlayerActivity extends AppCompatActivity {
     private void bindViews() {
         root = findViewById(R.id.root);
         aspect = findViewById(R.id.aspect);
-        surface = findViewById(R.id.surface);
+        installRenderView(wantedRenderKind());
         topBar = findViewById(R.id.topBar);
         bottomBar = findViewById(R.id.bottomBar);
         channelPanel = findViewById(R.id.channelPanel);
@@ -333,11 +351,95 @@ public class PlayerActivity extends AppCompatActivity {
         rvPanel.setAdapter(panelAdapter);
     }
 
+    // ---------------- 渲染视图 ----------------
+
+    /** auto 先按 SurfaceView 走；首帧超时后再自动换成 TextureView。 */
+    private int wantedRenderKind() {
+        return "texture".equals(Prefs.renderMode()) ? RENDER_TEXTURE : RENDER_SURFACE;
+    }
+
+    /** 重建渲染视图。两种视图类型不能互换，只能整个换掉。 */
+    private void installRenderView(int kind) {
+        renderKind = kind == RENDER_TEXTURE ? RENDER_TEXTURE : RENDER_SURFACE;
+        if (aspect == null) {
+            return;
+        }
+        aspect.removeAllViews();
+        ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        if (renderKind == RENDER_TEXTURE) {
+            texture = new TextureView(this);
+            texture.setLayoutParams(lp);
+            aspect.addView(texture);
+            surface = null;
+        } else {
+            surface = new SurfaceView(this);
+            surface.setLayoutParams(lp);
+            aspect.addView(surface);
+            texture = null;
+        }
+        aspect.requestLayout();
+    }
+
+    /**
+     * 有声无画的兜底。4.1~4.3 的很多盒子（Amlogic / Rockchip 老固件）会出现
+     * 「解码器初始化成功、音频正常、SurfaceView 上永远是黑的」，这时：
+     *   1. 换 TextureView（走 GPU 合成，绕开老 SurfaceFlinger 的图层问题）
+     *   2. 还不行就换系统内核（MediaPlayer 走另一套 ACodec 路径）
+     */
+    private final Runnable firstFrameTimeoutTask = new Runnable() {
+        @Override
+        public void run() {
+            if (firstFrameRendered || usingSystemPlayer || errorVisible || channel == null
+                    || isFinishing()) {
+                return;
+            }
+            int step = noFirstFrameFallback();
+            if (step == 1) {
+                showToast("画面没出来，改用兼容渲染…");
+            } else if (step == 2) {
+                showToast("画面仍未出现，换系统播放器…");
+            }
+            if (step != 0) {
+                startPlayback();
+            }
+        }
+    };
+
+    /**
+     * 执行一级回退，返回 1（换成 TextureView）/ 2（换成系统内核）/ 0（没有更多手段）。
+     * 抽成独立方法，方便单测直接验证，不必真等 8 秒。
+     */
+    int noFirstFrameFallback() {
+        if (forceSystemKernel) {
+            // 已经退到系统内核，再换渲染方式也没有意义，避免来回折腾
+            return 0;
+        }
+        if (renderKind != RENDER_TEXTURE) {
+            if ("auto".equals(Prefs.renderMode())) {
+                // 记到设置里，换台时不用再等这 8 秒
+                Prefs.setRenderMode("texture");
+            }
+            releasePlayers();
+            installRenderView(RENDER_TEXTURE);
+            return 1;
+        }
+        if (!forceSystemKernel) {
+            forceSystemKernel = true;
+            releasePlayers();
+            installRenderView(RENDER_SURFACE);
+            return 2;
+        }
+        return 0;
+    }
+
     // ---------------- 播放内核 ----------------
 
     private void startPlayback() {
         releasePlayers();
         hideError();
+        firstFrameRendered = false;
+        handler.removeCallbacks(firstFrameTimeoutTask);
         if (channel == null) {
             return;
         }
@@ -348,12 +450,19 @@ public class PlayerActivity extends AppCompatActivity {
         }
         String url = line.playableUrl();
         String ua = resolveUserAgent(line);
+        currentUrl = url;
+        currentUa = ua;
         showLoading(true, "正在连接 " + line.displayName() + "…");
 
         handler.removeCallbacks(loadTimeoutTask);
         handler.postDelayed(loadTimeoutTask, LOAD_TIMEOUT);
 
-        if ("sys".equals(Prefs.kernel()) || isSystemOnly(url)) {
+        boolean system = forceSystemKernel || "sys".equals(Prefs.kernel()) || isSystemOnly(url);
+        // 系统 MediaPlayer 只能往 SurfaceView 上画，纹理视图要换回来
+        if (system && renderKind == RENDER_TEXTURE) {
+            installRenderView(RENDER_SURFACE);
+        }
+        if (system) {
             startSystemPlayer(url, ua);
         } else {
             startExoPlayer(url, ua);
@@ -386,7 +495,14 @@ public class PlayerActivity extends AppCompatActivity {
                 renderers.setMediaCodecSelector(SOFTWARE_DECODER);
             }
             exo = new ExoPlayer.Builder(this, renderers).build();
-            exo.setVideoSurfaceView(surface);
+            if (renderKind == RENDER_TEXTURE && texture != null) {
+                exo.setVideoTextureView(texture);
+            } else {
+                if (surface == null) {
+                    installRenderView(RENDER_SURFACE);
+                }
+                exo.setVideoSurfaceView(surface);
+            }
             exo.addListener(exoListener);
 
             DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
@@ -414,6 +530,9 @@ public class PlayerActivity extends AppCompatActivity {
     private void startSystemPlayer(final String url, String ua) {
         usingSystemPlayer = true;
         try {
+            if (surface == null) {
+                installRenderView(RENDER_SURFACE);
+            }
             sysPlayer = new MediaPlayer();
             sysPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
             sysPlayer.setDisplay(surface.getHolder());
@@ -485,6 +604,9 @@ public class PlayerActivity extends AppCompatActivity {
             if (state == Player.STATE_READY) {
                 handler.removeCallbacks(loadTimeoutTask);
                 showLoading(false, null);
+                // READY 只代表能解码出数据，不保证画面真的上了屏
+                handler.removeCallbacks(firstFrameTimeoutTask);
+                handler.postDelayed(firstFrameTimeoutTask, FIRST_FRAME_TIMEOUT);
             } else if (state == Player.STATE_BUFFERING) {
                 if (!errorVisible) {
                     showLoading(true, "缓冲中…");
@@ -503,6 +625,12 @@ public class PlayerActivity extends AppCompatActivity {
         @Override
         public void onVideoSizeChanged(VideoSize videoSize) {
             aspect.setVideoSize(videoSize.width, videoSize.height);
+        }
+
+        @Override
+        public void onRenderedFirstFrame() {
+            firstFrameRendered = true;
+            handler.removeCallbacks(firstFrameTimeoutTask);
         }
     };
 

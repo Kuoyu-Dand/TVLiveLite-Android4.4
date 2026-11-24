@@ -31,6 +31,7 @@ public final class Prefs {
     public static final String K_EPG_ON = "epg_on";
     public static final String K_AUTOPLAY = "autoplay_last";   // 打开软件直进上次频道
     public static final String K_CARE = "care_mode";           // 关怀模式：大字号 + 界面从简
+    public static final String K_RENDER = "render_mode";       // auto / surface / texture
     public static final String K_LAST_CHANNEL = "last_channel";
     public static final String K_LAST_GROUP = "last_group";
 
@@ -210,6 +211,23 @@ public final class Prefs {
 
     public static String aspect() {
         return getString(K_ASPECT, "fit");
+    }
+
+    /**
+     * 画面渲染方式：auto / surface / texture。
+     * 少数 4.1~4.3 的老盒子硬解能出声但 SurfaceView 上不出画面，
+     * 换成 TextureView 走 GPU 合成就能显示，所以给它留一个开关。
+     */
+    public static String renderMode() {
+        String mode = getString(K_RENDER, "auto");
+        if (!"surface".equals(mode) && !"texture".equals(mode)) {
+            return "auto";
+        }
+        return mode;
+    }
+
+    public static void setRenderMode(String mode) {
+        putString(K_RENDER, "surface".equals(mode) || "texture".equals(mode) ? mode : "auto");
     }
 
     public static int timeoutMs() {
