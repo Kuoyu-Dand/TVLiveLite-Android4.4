@@ -149,6 +149,15 @@ public class SettingsFragment extends Fragment {
                         chooseRender();
                     }
                 });
+        add("最高画质", qualityName(),
+                "有的台只有声音没画面？那多半是源的分辨率/编码超出本机硬解上限，"
+                        + "调成 720p 或 480p 再试",
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        chooseQuality();
+                    }
+                });
         add("画面比例", aspectName(), null, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -353,6 +362,46 @@ public class SettingsFragment extends Fragment {
                         Prefs.putString(Prefs.K_DECODE, which == 1 ? "sw" : "auto");
                         dialog.dismiss();
                         buildRows();
+                    }
+                })
+                .show();
+    }
+
+    private String qualityName() {
+        String q = Prefs.maxQuality();
+        if ("1080".equals(q)) {
+            return "1080p";
+        }
+        if ("720".equals(q)) {
+            return "720p";
+        }
+        if ("480".equals(q)) {
+            return "480p";
+        }
+        int cap = Prefs.maxVideoHeight();
+        return cap > 0 ? "自动（" + cap + "p 封顶）" : "自动（不限制）";
+    }
+
+    private void chooseQuality() {
+        final String[] values = {"auto", "1080", "720", "480"};
+        final String[] items = {"自动（4.4 以下默认 720p 封顶）", "1080p", "720p（推荐老盒子）",
+                "480p（最稳）"};
+        int checked = 0;
+        String current = Prefs.maxQuality();
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) {
+                checked = i;
+            }
+        }
+        new AlertDialog.Builder(getActivity(), R.style.DialogTheme)
+                .setTitle("最高画质")
+                .setSingleChoiceItems(items, checked, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Prefs.setMaxQuality(values[which]);
+                        dialog.dismiss();
+                        buildRows();
+                        Ui.toast(getActivity(), "最高画质：" + qualityName());
                     }
                 })
                 .show();

@@ -1,11 +1,11 @@
 # 电视直播 Lite（TVLiveLite）
 
 <p align="center">
-  <a href="../../releases/tag/v1.0.7"><img src="docs/icon-showcase.png" alt="电视直播 Lite 图标与 TV banner" width="760"></a>
+  <a href="../../releases/tag/v1.0.8"><img src="docs/icon-showcase.png" alt="电视直播 Lite 图标与 TV banner" width="760"></a>
 </p>
 
 <p align="center">
-  <a href="../../releases/tag/v1.0.7"><img src="https://img.shields.io/badge/DOWNLOAD-APK-627CFF?style=for-the-badge&logo=android&logoColor=white" alt="下载 APK"></a>
+  <a href="../../releases/tag/v1.0.8"><img src="https://img.shields.io/badge/DOWNLOAD-APK-627CFF?style=for-the-badge&logo=android&logoColor=white" alt="下载 APK"></a>
   <img src="https://img.shields.io/badge/Android-4.1%2B-3F5AF0?style=for-the-badge" alt="最低 Android 4.1">
   <img src="https://img.shields.io/badge/UI-%E5%8E%9F%E7%94%9F%20View-555555?style=for-the-badge" alt="原生 View">
   <img src="https://img.shields.io/badge/License-MIT-2EA44F?style=for-the-badge" alt="MIT">
@@ -27,15 +27,15 @@
 
 ## 一、下载与产物
 
-直接装：到 [**v1.0.7 兼容版**](../../releases/tag/v1.0.7) 下载 `MyTVLite-1.0.7-sdk16-release.apk`，
-拷到 U 盘插到盒子上装，或者 `adb install -r MyTVLite-1.0.7-sdk16-release.apk`。
+直接装：到 [**v1.0.8 兼容版**](../../releases/tag/v1.0.8) 下载 `MyTVLite-1.0.8-sdk16-release.apk`，
+拷到 U 盘插到盒子上装，或者 `adb install -r MyTVLite-1.0.8-sdk16-release.apk`。
 
 > 名字里的 `sdk16` 就是「最低 API 16（Android 4.1）」的意思，和主线包功能一样。
 
 | 文件 | 说明 |
 | --- | --- |
-| [`Releases`](../../releases/tag/v1.0.7) | **推荐**。签名包 + 校验值，版本历史一目了然 |
-| `dist/MyTVLite-1.0.7-sdk16-release.apk` | 仓库内同一份包（克隆后可直接取，5.3 MB） |
+| [`Releases`](../../releases/tag/v1.0.8) | **推荐**。签名包 + 校验值，版本历史一目了然 |
+| `dist/MyTVLite-1.0.8-sdk16-release.apk` | 仓库内同一份包（克隆后可直接取，5.3 MB） |
 | `app/` | 完整 Android 工程，可用 Android Studio 直接打开 |
 | `app/mytv-lite.jks` | 签名文件，密码 `mytvlite`，别名 `mytvlite` |
 
@@ -82,7 +82,7 @@
 | 画面比例 | ✅ | 适应 / 拉伸 / 裁剪（自写 `AspectFrame`，两种内核共用） |
 | 节目单（XMLTV） | ✅ | 支持 `.xml` 与 `.xml.gz`（可本地导入），当前节目 + 进度条 + 下一节目 + 今日节目列表 |
 | 频道搜索 | ✅ | 按名称 / 标准名模糊匹配 |
-| 设置 | ✅ | 关怀模式、直进上次频道、源管理、内核、解码、画面渲染、比例、UA、超时、缓存时长、台标、开机自启、清缓存 |
+| 设置 | ✅ | 关怀模式、直进上次频道、源管理、内核、解码、画面渲染、最高画质、比例、UA、超时、缓存时长、台标、开机自启、清缓存 |
 | 开机自启 | ✅ | 可选，部分盒子限制后台启动 |
 | 打开软件直接播放 | ✅ | 跳过首页，直接播上次关闭时的频道（关闭软件前的那个台） |
 | 关怀模式 | ✅ | 频道面板 / 信息条 / 首页字号整体放大，底栏从简，信息条停留加倍，防误触取消收藏 |
@@ -157,24 +157,37 @@ minSdk 16 不是「改个数字」这么简单，几处老系统缺失的能力�
 | 矢量图标 | 走 `vectorDrawables.useSupportLibrary = true` + `AppCompatResources`，不在低版本上解析 `<vector>` 崩溃 |
 | 64K 方法数 | legacy `MultiDex.install()`，4.1 上照常分包 |
 | 存储权限 | `targetSdk 28`，沿用传统存储模型，不涉及分区存储 |
-| 有声无画 | 首帧看门狗：8 秒没出画面自动换 TextureView，再不行自动切系统内核 |
+| 有声无画 | 首帧看门狗：8 秒没出画面自动换 TextureView，再不行自动切系统内核（14 秒）；1080p / HEVC 源另有画质上限兜底 |
 
 **「有声音、画面全黑」怎么办**（4.1~4.3 上比较常见）
 
-老盒子的解码器经常「初始化成功、音频正常出声、SurfaceView 那一层却永远黑的」，
-原因是硬解把帧解到 GPU 纹理后，老固件的 SurfaceFlinger / HWC 合成不出来。
-1.0.7 起会自动救：播到 READY 后 8 秒没渲染出首帧，就先换成 TextureView（走 GPU 合成），
-再 8 秒还不行就自动切到系统播放器，右下角会提示一句。等不及的话手动改也行：
+先分清两种黑屏，处理方式完全不同：
+
+| 现象 | 原因 | 怎么办 |
+| --- | --- | --- |
+| 所有台都黑，但都有声音 | 硬解把帧解到 GPU 纹理后，老固件的 SurfaceFlinger / HWC 合成不出来 | 1.0.7 起自动救：8 秒不出画先换 TextureView，再 8 秒切系统内核 |
+| **只有部分台黑**（1080p 的台黑、480p/720p 的台正常） | 解码能力不够。老硬解器吃不下 1080p / H.265，输出帧上不了屏 | 1.0.8 起自动封顶：4.1~4.3 默认按 720p 限制，HLS 多码率源自动落到能解的那一路 |
+
+第二种情况以前最容易被误判成「网络卡」。判断方法：按遥控器 **菜单 → 播放诊断**，
+能看到当前源的编码、分辨率、码率、实际解码器名和有没有出画——
+
+- 编码写着 **H.265（HEVC）**：4.1~4.3 的盒子基本没有 HEVC 硬解，换 H.264 的源
+- 分辨率写着 **1920×1080** 而画质上限是「自动（720p 封顶）」：说明这个源是单码率，
+  降不下来，按「换线路」找一个低码率源
+- 解码器是 `OMX.google...`：说明在用软解，1080p 会卡成幻灯片，属于正常
+
+手动处理顺序（等不及自动回退时）：
 
 | 顺序 | 操作 | 说明 |
 | --- | --- | --- |
-| 1 | 设置 → 画面渲染 → 兼容（TextureView） | 改变渲染通路，不动解码器，多数情况这一下就够了 |
-| 2 | 设置 → 播放器内核 → 系统播放器 | MediaPlayer 走另一套 ACodec，能绕过 ExoPlayer 的老固件坑 |
-| 3 | 设置 → 解码方式 → 软解优先 | 硬解本身有问题的（花屏、黑屏、绿屏）最后再试这个，CPU 占用会高 |
+| 1 | 设置 → 最高画质 → 720p / 480p | 单码率源降不下来，但多码率源立刻见效，画质换流畅 |
+| 2 | 设置 → 画面渲染 → 兼容（TextureView） | 改变渲染通路，不动解码器，整机都黑时这一下就够了 |
+| 3 | 设置 → 播放器内核 → 系统播放器 | MediaPlayer 走另一套 ACodec，能绕过 ExoPlayer 的老固件坑 |
+| 4 | 设置 → 解码方式 → 软解优先 | 硬解本身有问题的（花屏、黑屏、绿屏）最后再试这个，CPU 占用会高 |
 
 **性能提醒**：4.1~4.3 的设备基本是 2012 年前后的单核/双核 + 512MB~1GB 内存，硬解普遍只到
-H.264 720p~1080p。HLS 多码率、HEVC 频道大概率会卡或黑屏，进设置把内核切「系统播放器」、
-解码切「软解优先」通常能救回来；再不行就说明这台机器确实到极限了。
+H.264 720p。1080p 高码率、H.265 频道在这类机器上基本无解——不是软件不够聪明，
+是芯片真的没有那条解码流水线，只能换源。
 
 ---
 

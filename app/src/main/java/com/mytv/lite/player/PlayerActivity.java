@@ -29,15 +29,18 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlayer;
+import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.Tracks;
 import com.google.android.exoplayer2.mediacodec.MediaCodecInfo;
 import com.google.android.exoplayer2.mediacodec.MediaCodecSelector;
 import com.google.android.exoplayer2.mediacodec.MediaCodecUtil;
 import com.google.android.exoplayer2.source.MediaSource;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
+import com.google.android.exoplayer2.trackselection.TrackSelectionParameters;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
@@ -82,6 +85,8 @@ public class PlayerActivity extends AppCompatActivity {
      * 8 秒后自动换一种渲染方式，而不是让用户对着黑屏干等。
      */
     private static final long FIRST_FRAME_TIMEOUT = 8000L;
+    /** 系统内核没有可靠的首帧回调，宽容期给长一些，避免把「慢」误判成「黑」。 */
+    private static final long FIRST_FRAME_TIMEOUT_SYS = 14000L;
 
     public static void start(Context context, String channelName) {
         Intent intent = new Intent(context, PlayerActivity.class);
@@ -112,6 +117,13 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean forceSystemKernel;
     private String currentUrl;
     private String currentUa;
+    /** 诊断用：当前流的编码、分辨率、码率、解码器。黑屏时靠它判断是源超了还是渲染出问题。 */
+    private String diagMime;
+    private int diagWidth;
+    private int diagHeight;
+    private int diagBitrate;
+    private float diagFrameRate;
+    private String diagDecoder;
     private FrameLayout root;
     private LinearLayout topBar;
     private LinearLayout bottomBar;
@@ -390,8 +402,17 @@ public class PlayerActivity extends AppCompatActivity {
     private final Runnable firstFrameTimeoutTask = new Runnable() {
         @Override
         public void run() {
-            if (firstFrameRendered || usingSystemPlayer || errorVisible || channel == null
-                    || isFinishing()) {
+            if (firstFrameRendered || errorVisible || channel == null || isFinishing()) {
+                return;
+            }
+            if (usingSystemPlayer) {
+                // 两种渲染方式 + 两套内核都试过还是黑的，基本可以断定是解码能力不够。
+                // 但如果解码器已经报了尺寸，说明固件可能只是不爱发上屏回调，不打断播放。
+                if (diagHeight <= 0) {
+                    onPlaybackFailed(blackScreenHint());
+                } else {
+                    showToast("画面还没出来？按菜单 →「播放诊断」看看原因");
+                }
                 return;
             }
             int step = noFirstFrameFallback();
@@ -405,6 +426,28 @@ public class PlayerActivity extends AppCompatActivity {
             }
         }
     };
+
+    /**
+     * 黑屏时的解释文案。用户最需要知道的是「为什么」和「怎么办」：
+     * 同一个源在 480p/720p 出画、1080p 黑屏，基本都是硬解器吃不下这个分辨率/编码。
+     */
+    String blackScreenHint() {
+        StringBuilder sb = new StringBuilder("有声音、没有画面。");
+        if (diagMime != null && diagMime.contains("hevc")) {
+            sb.append("该源是 H.265(HEVC) 编码，本机多半不支持。");
+        } else if (diagHeight >= 1080) {
+            sb.append("该源是 ").append(diagHeight).append("p，超出本机硬解上限。");
+        } else if (diagHeight > 0) {
+            sb.append("该源分辨率 ").append(diagWidth).append("×").append(diagHeight)
+                    .append("，本机解码器仍无法上屏。");
+        } else {
+            sb.append("本机解码器无法把该源画到屏幕上。");
+        }
+        sb.append("\n请按「换线路」换一个低码率源，");
+        sb.append("或在设置里把「最高画质」调成 720p / 480p 再试。");
+        return sb.toString();
+    }
+
 
     /**
      * 执行一级回退，返回 1（换成 TextureView）/ 2（换成系统内核）/ 0（没有更多手段）。
@@ -439,6 +482,7 @@ public class PlayerActivity extends AppCompatActivity {
         releasePlayers();
         hideError();
         firstFrameRendered = false;
+        resetDiag();
         handler.removeCallbacks(firstFrameTimeoutTask);
         if (channel == null) {
             return;
@@ -504,6 +548,7 @@ public class PlayerActivity extends AppCompatActivity {
                 exo.setVideoSurfaceView(surface);
             }
             exo.addListener(exoListener);
+            applyQualityLimit(exo);
 
             DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
                     .setUserAgent(ua)
@@ -544,15 +589,24 @@ public class PlayerActivity extends AppCompatActivity {
                 public void onPrepared(MediaPlayer mp) {
                     handler.removeCallbacks(loadTimeoutTask);
                     showLoading(false, null);
+                    readSystemTrackInfo(mp);
                     try {
                         mp.start();
                     } catch (Throwable ignored) {
                     }
+                    // 系统内核没有 onRenderedFirstFrame，只能靠 MEDIA_INFO_VIDEO_RENDERING_START，
+                    // 老固件给得慢，所以宽容期比 Exo 那条链路长一点，免得误判成黑屏。
+                    handler.removeCallbacks(firstFrameTimeoutTask);
+                    handler.postDelayed(firstFrameTimeoutTask, FIRST_FRAME_TIMEOUT_SYS);
                 }
             });
             sysPlayer.setOnVideoSizeChangedListener(new MediaPlayer.OnVideoSizeChangedListener() {
                 @Override
                 public void onVideoSizeChanged(MediaPlayer mp, int width, int height) {
+                    if (width > 0 && height > 0) {
+                        diagWidth = width;
+                        diagHeight = height;
+                    }
                     aspect.setVideoSize(width, height);
                 }
             });
@@ -570,6 +624,11 @@ public class PlayerActivity extends AppCompatActivity {
                         showLoading(true, "缓冲中…");
                     } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END
                             || what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                        if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                            // 系统内核真正上屏的信号
+                            firstFrameRendered = true;
+                            handler.removeCallbacks(firstFrameTimeoutTask);
+                        }
                         showLoading(false, null);
                     }
                     return false;
@@ -579,6 +638,193 @@ public class PlayerActivity extends AppCompatActivity {
         } catch (Throwable t) {
             onPlaybackFailed("系统播放器无法打开该地址");
         }
+    }
+
+    // ---------------- 画质上限与诊断 ----------------
+
+    /**
+     * 按「最高画质」给视频轨道设上限。
+     * HLS 多码率源默认会挑最高码率那一档，老盒子挑到 1080p 就是「有声无画」；
+     * 限制之后 ExoPlayer 会自动选 720p / 480p 那一路。单码率源降不下来，只能换线路。
+     */
+    private void applyQualityLimit(ExoPlayer player) {
+        try {
+            player.setTrackSelectionParameters(qualityParams(player.getTrackSelectionParameters()));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 抽成静态方法，单测可以直接验证画质上限算得对不对。 */
+    static TrackSelectionParameters qualityParams(TrackSelectionParameters base) {
+        TrackSelectionParameters.Builder builder = base.buildUpon();
+        int maxHeight = Prefs.maxVideoHeight();
+        if (maxHeight > 0) {
+            // 宽度按 2 倍高度放宽，16:9 和 4:3 的源都不会被误伤
+            builder.setMaxVideoSize(maxHeight * 2, maxHeight);
+            int maxBitrate = Prefs.maxVideoBitrate();
+            if (maxBitrate > 0) {
+                builder.setMaxVideoBitrate(maxBitrate);
+            }
+        }
+        return builder.build();
+    }
+
+    private void resetDiag() {
+        diagMime = null;
+        diagWidth = 0;
+        diagHeight = 0;
+        diagBitrate = 0;
+        diagFrameRate = 0f;
+        diagDecoder = null;
+    }
+
+    private void updateDiagFromTracks(Tracks tracks) {
+        if (tracks == null) {
+            return;
+        }
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_VIDEO || !group.isSelected()
+                    || group.length == 0) {
+                continue;
+            }
+            Format format = group.getTrackFormat(0);
+            diagMime = format.sampleMimeType;
+            diagWidth = format.width;
+            diagHeight = format.height;
+            diagBitrate = format.bitrate == Format.NO_VALUE ? 0 : format.bitrate;
+            diagFrameRate = format.frameRate == Format.NO_VALUE ? 0f : format.frameRate;
+            diagDecoder = decoderName(format.sampleMimeType);
+            return;
+        }
+    }
+
+    /** 系统内核拿不到 ExoPlayer 的 Format，只能从 TrackInfo 里抠编码和分辨率。 */
+    private void readSystemTrackInfo(MediaPlayer mp) {
+        try {
+            MediaPlayer.TrackInfo[] infos = mp.getTrackInfo();
+            if (infos != null) {
+                for (MediaPlayer.TrackInfo info : infos) {
+                    if (info == null
+                            || info.getTrackType() != MediaPlayer.TrackInfo.MEDIA_TRACK_TYPE_VIDEO) {
+                        continue;
+                    }
+                    android.media.MediaFormat f = info.getFormat();
+                    if (f == null) {
+                        continue;
+                    }
+                    if (f.containsKey("mime")) {
+                        diagMime = f.getString("mime");
+                    }
+                    if (f.containsKey("width")) {
+                        diagWidth = f.getInteger("width");
+                    }
+                    if (f.containsKey("height")) {
+                        diagHeight = f.getInteger("height");
+                    }
+                    if (f.containsKey("bitrate")) {
+                        diagBitrate = f.getInteger("bitrate");
+                    }
+                    diagDecoder = decoderName(diagMime);
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        // TrackInfo 不可用时退回 MediaPlayer 自己报的尺寸
+        try {
+            if (mp.getVideoWidth() > 0) {
+                diagWidth = mp.getVideoWidth();
+                diagHeight = mp.getVideoHeight();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String decoderName(String mime) {
+        if (mime == null) {
+            return null;
+        }
+        try {
+            List<MediaCodecInfo> infos =
+                    MediaCodecSelector.DEFAULT.getDecoderInfos(mime, false, false);
+            if (!infos.isEmpty()) {
+                MediaCodecInfo first = infos.get(0);
+                return first.name + (first.softwareOnly ? "（软解）" : "（硬解）");
+            }
+        } catch (Throwable ignored) {
+        }
+        return "无可用解码器";
+    }
+
+    private static String codecLabel(String mime) {
+        if (mime == null) {
+            return "未知";
+        }
+        if (mime.contains("avc")) {
+            return "H.264（AVC）";
+        }
+        if (mime.contains("hevc")) {
+            return "H.265（HEVC）";
+        }
+        if (mime.contains("av01")) {
+            return "AV1";
+        }
+        if (mime.contains("vp9")) {
+            return "VP9";
+        }
+        if (mime.contains("mpeg4") || mime.contains("mp4v")) {
+            return "MPEG-4";
+        }
+        return mime;
+    }
+
+    private String qualityLabel() {
+        String q = Prefs.maxQuality();
+        if ("1080".equals(q)) {
+            return "1080p";
+        }
+        if ("720".equals(q)) {
+            return "720p";
+        }
+        if ("480".equals(q)) {
+            return "480p";
+        }
+        return Prefs.maxVideoHeight() > 0 ? "自动（" + Prefs.maxVideoHeight() + "p 封顶）" : "自动（不限制）";
+    }
+
+    /**
+     * 播放诊断。老盒子上「为什么这个台黑屏」靠自己猜太费劲，
+     * 把编码、分辨率、解码器直接列出来，一眼就能看出是源超了还是渲染出问题。
+     */
+    String diagText() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("内核：").append(usingSystemPlayer ? "系统播放器" : "ExoPlayer");
+        sb.append("　渲染：")
+                .append(renderKind == RENDER_TEXTURE ? "TextureView" : "SurfaceView");
+        sb.append('\n');
+        if (channel != null && channel.currentLine() != null) {
+            sb.append("线路：").append(channel.currentLine().displayName());
+            sb.append("（共 ").append(channel.lineCount()).append(" 条）\n");
+        }
+        sb.append("编码：").append(codecLabel(diagMime)).append('\n');
+        if (diagWidth > 0 && diagHeight > 0) {
+            sb.append("分辨率：").append(diagWidth).append("×").append(diagHeight);
+            if (diagFrameRate > 0) {
+                sb.append(" @").append(Math.round(diagFrameRate)).append("fps");
+            }
+            sb.append('\n');
+        } else {
+            sb.append("分辨率：尚未取到\n");
+        }
+        if (diagBitrate > 0) {
+            sb.append("码率：").append(diagBitrate / 1000).append(" kbps\n");
+        }
+        if (diagDecoder != null) {
+            sb.append("解码器：").append(diagDecoder).append('\n');
+        }
+        sb.append("画面：").append(firstFrameRendered ? "已出画" : "未出画（只有声音）").append('\n');
+        sb.append("画质上限：").append(qualityLabel());
+        return sb.toString();
     }
 
     private static final MediaCodecSelector SOFTWARE_DECODER = new MediaCodecSelector() {
@@ -625,6 +871,11 @@ public class PlayerActivity extends AppCompatActivity {
         @Override
         public void onVideoSizeChanged(VideoSize videoSize) {
             aspect.setVideoSize(videoSize.width, videoSize.height);
+        }
+
+        @Override
+        public void onTracksChanged(Tracks tracks) {
+            updateDiagFromTracks(tracks);
         }
 
         @Override
@@ -1016,7 +1267,9 @@ public class PlayerActivity extends AppCompatActivity {
         String[] items = {
                 fav ? "取消收藏" : "收藏该频道",
                 "切换线路（" + channel.lineCount() + " 条）",
+                "最高画质（" + qualityLabel() + "）",
                 "画面比例",
+                "播放诊断",
                 "播放设置",
                 "退出播放",
         };
@@ -1032,8 +1285,12 @@ public class PlayerActivity extends AppCompatActivity {
                         } else if (which == 1) {
                             nextLine();
                         } else if (which == 2) {
-                            chooseAspect();
+                            chooseQuality();
                         } else if (which == 3) {
+                            chooseAspect();
+                        } else if (which == 4) {
+                            showDiag();
+                        } else if (which == 5) {
                             Intent intent = new Intent(PlayerActivity.this, MainActivity.class);
                             intent.putExtra("open_settings", true);
                             startActivity(intent);
@@ -1042,6 +1299,42 @@ public class PlayerActivity extends AppCompatActivity {
                         }
                     }
                 })
+                .show();
+    }
+
+    /** 最高画质：发现某个台黑屏时，就地降一档不用跑回设置页。 */
+    private void chooseQuality() {
+        final String[] values = {"auto", "1080", "720", "480"};
+        final String[] items = {"自动" + (Prefs.maxVideoHeight() > 0
+                ? "（本机 " + Prefs.maxVideoHeight() + "p 封顶）" : "（不限制）"),
+                "1080p", "720p（推荐老盒子）", "480p（最稳）"};
+        int checked = 0;
+        String current = Prefs.maxQuality();
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) {
+                checked = i;
+            }
+        }
+        new AlertDialog.Builder(this, R.style.DialogTheme)
+                .setTitle("最高画质")
+                .setSingleChoiceItems(items, checked, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        Prefs.setMaxQuality(values[which]);
+                        dialog.dismiss();
+                        // 换档后重开一次，ExoPlayer 才会按新上限重选轨道
+                        startPlayback();
+                        showToast("最高画质：" + qualityLabel());
+                    }
+                })
+                .show();
+    }
+
+    private void showDiag() {
+        new AlertDialog.Builder(this, R.style.DialogTheme)
+                .setTitle("播放诊断")
+                .setMessage(diagText())
+                .setPositiveButton("知道了", null)
                 .show();
     }
 

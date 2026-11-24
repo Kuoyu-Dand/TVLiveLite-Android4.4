@@ -32,6 +32,7 @@ public final class Prefs {
     public static final String K_AUTOPLAY = "autoplay_last";   // 打开软件直进上次频道
     public static final String K_CARE = "care_mode";           // 关怀模式：大字号 + 界面从简
     public static final String K_RENDER = "render_mode";       // auto / surface / texture
+    public static final String K_MAX_QUALITY = "max_quality";  // auto / 1080 / 720 / 480
     public static final String K_LAST_CHANNEL = "last_channel";
     public static final String K_LAST_GROUP = "last_group";
 
@@ -228,6 +229,67 @@ public final class Prefs {
 
     public static void setRenderMode(String mode) {
         putString(K_RENDER, "surface".equals(mode) || "texture".equals(mode) ? mode : "auto");
+    }
+
+    // ---------------- 最高画质 ----------------
+
+    /**
+     * 最高画质：auto / 1080 / 720 / 480。
+     * 4.1~4.3 的老盒子硬解器很多只吃到 720p，喂 1080p 的源会「有声无画」，
+     * 而 HLS 多码率源默认又倾向选最高码率，所以在解码这一层给它设个上限。
+     */
+    public static String maxQuality() {
+        String q = getString(K_MAX_QUALITY, "auto");
+        if (!"1080".equals(q) && !"720".equals(q) && !"480".equals(q)) {
+            return "auto";
+        }
+        return q;
+    }
+
+    public static void setMaxQuality(String quality) {
+        String q = quality;
+        if (!"1080".equals(q) && !"720".equals(q) && !"480".equals(q)) {
+            q = "auto";
+        }
+        putString(K_MAX_QUALITY, q);
+    }
+
+    /**
+     * 允许的最大视频高度，0 表示不限制。
+     * auto：Android 4.4 以下（API 16~18）默认按 720p 封顶——这段版本上的盒子普遍是
+     * 单核/双核 A7 级别，1080p 高码率基本是黑屏或幻灯片；4.4 及以上交给系统判断。
+     */
+    public static int maxVideoHeight() {
+        return maxVideoHeightFor(maxQuality(), android.os.Build.VERSION.SDK_INT);
+    }
+
+    /** 纯函数版本，方便单测覆盖低版本分支（Robolectric 跑不了 API 18 及以下）。 */
+    public static int maxVideoHeightFor(String quality, int sdkInt) {
+        if ("1080".equals(quality)) {
+            return 1080;
+        }
+        if ("720".equals(quality)) {
+            return 720;
+        }
+        if ("480".equals(quality)) {
+            return 480;
+        }
+        return sdkInt < 19 ? 720 : 0;
+    }
+
+    /** 与高度上限配套的码率上限（bps），0 表示不限制。 */
+    public static int maxVideoBitrate() {
+        int h = maxVideoHeight();
+        if (h == 0) {
+            return 0;
+        }
+        if (h <= 480) {
+            return 2_000_000;
+        }
+        if (h <= 720) {
+            return 4_000_000;
+        }
+        return 8_000_000;
     }
 
     public static int timeoutMs() {

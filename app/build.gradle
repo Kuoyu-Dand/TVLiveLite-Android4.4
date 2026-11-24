@@ -10,8 +10,8 @@ android {
         minSdk 16
         // 老设备用 targetSdk 28：可继续使用传统存储、无分区存储/通知权限等新限制
         targetSdk 28
-        versionCode 8
-        versionName "1.0.7"
+        versionCode 9
+        versionName "1.0.8"
 
         // ExoPlayer + AppCompat 方法数超过 64K，API 21 以下都需要 legacy multidex
         multiDexEnabled true
