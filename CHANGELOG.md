@@ -2,6 +2,29 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，版本号格式 `主.次.修`。
 
+## [1.0.6] - 2026-11-24
+
+**兼容线**：功能与 1.0.5 完全一致，只把最低系统从 Android 4.4 降到 **Android 4.1（API 16）**，
+让 4.1 / 4.2 / 4.3 的老盒子也能装。主线 `main` 仍为 minSdk 19，两包可互相覆盖安装。
+
+### 变更
+
+- `minSdk` 19 → 16，`versionCode` 6 → 7，产物名改为 `MyTVLite-1.0.6-sdk16-release.apk`
+- U 盘枚举：`StorageManager` 那条路（API 24+）整体加了版本保护，
+  4.1~4.3 上直接走 `/proc/mounts` + 厂商路径，行为与原来一致
+- 主题里去掉 `android:windowContentTransitions`（API 21 属性，值本来就是 `false`）
+- CI 增加 `android4.1` 分支触发
+
+### 说明
+
+- 依赖链本身都支持低版本：appcompat / recyclerview / core / fragment / constraintlayout 均为
+  minSdk 14，multidex 4，ExoPlayer 2.18.7 为 minSdk 16 —— 16 就是这个组合的下限
+- 再往下降到 Android 4.0（API 14/15）必须去掉 ExoPlayer 只留系统播放器，HLS/TS 兼容性会明显退化，故不提供
+- 4.1~4.3 设备多为单核/双核 + 512MB 内存，硬解普遍只到 1080p H.264 甚至 720p，
+  高码率或 HEVC 频道会卡顿；这类机器建议在设置里开「软解优先」或改用「系统播放器」内核
+
+---
+
 ## [1.0.5] - 2026-11-22
 
 这一版按“给长辈用”来改：少按几下、字大一点。
@@ -68,5 +91,6 @@
 
 | 版本 | versionCode | 最低系统 | 产物 |
 | --- | --- | --- | --- |
+| 1.0.6 | 7 | Android 4.1 (API 16) | `MyTVLite-1.0.6-sdk16-release.apk`（兼容线） |
 | 1.0.5 | 6 | Android 4.4 (API 19) | `MyTVLite-1.0.5-sdk19-release.apk` |
 | 1.0.4 | 5 | Android 4.4 (API 19) | `MyTVLite-1.0.4-sdk19-release.apk` |

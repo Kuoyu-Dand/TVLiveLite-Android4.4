@@ -6,13 +6,18 @@
 
 <p align="center">
   <a href="../../releases/latest"><img src="https://img.shields.io/badge/DOWNLOAD-APK-627CFF?style=for-the-badge&logo=android&logoColor=white" alt="下载 APK"></a>
-  <img src="https://img.shields.io/badge/Android-4.4%2B-3F5AF0?style=for-the-badge" alt="最低 Android 4.4">
+  <img src="https://img.shields.io/badge/Android-4.1%2B-3F5AF0?style=for-the-badge" alt="最低 Android 4.1">
   <img src="https://img.shields.io/badge/UI-%E5%8E%9F%E7%94%9F%20View-555555?style=for-the-badge" alt="原生 View">
   <img src="https://img.shields.io/badge/License-MIT-2EA44F?style=for-the-badge" alt="MIT">
 </p>
 
 > 参考 [mytv-android](https://github.com/mytv-android/mytv-android)（天光云影）改造的 IPTV 直播客户端，
-> **最低支持 Android 4.4（API 19）**，面向老电视盒子 / 老安卓电视。
+> **最低支持 Android 4.1（API 16）**，面向老电视盒子 / 老安卓电视。
+
+> [!IMPORTANT]
+> 当前是 **`android4.1` 兼容分支**，minSdk 降到 16，覆盖 Android 4.1 / 4.2 / 4.3 / 4.4 及更新的设备。
+> 主线 [`main`](../../tree/main) 保持 minSdk 19（Android 4.4）不动，两者功能完全一致，
+> **包名与签名相同，可以互相覆盖安装**（本分支 versionCode 更高，能直接升级）。
 
 原版使用 Jetpack Compose + Media3，最低 API 21，且依赖大量新特性，4.4 设备上完全跑不起来。
 本项目把同一套功能用**原生 View + ExoPlayer 2.18** 重新实现，界面风格保持一致（深色 + 淡紫强调色、
@@ -22,13 +27,15 @@
 
 ## 一、下载与产物
 
-直接装：到 [**Releases**](../../releases/latest) 下载最新 `MyTVLite-x.y.z-sdk19-release.apk`，
-拷到 U 盘插到盒子上装，或者 `adb install -r MyTVLite-1.0.5-sdk19-release.apk`。
+直接装：到 [**Releases**](../../releases/latest) 下载 `MyTVLite-1.0.6-sdk16-release.apk`，
+拷到 U 盘插到盒子上装，或者 `adb install -r MyTVLite-1.0.6-sdk16-release.apk`。
+
+> 名字里的 `sdk16` 就是「最低 API 16（Android 4.1）」的意思，和主线包功能一样。
 
 | 文件 | 说明 |
 | --- | --- |
 | [`Releases`](../../releases/latest) | **推荐**。签名包 + 校验值，版本历史一目了然 |
-| `dist/MyTVLite-1.0.5-sdk19-release.apk` | 仓库内同一份包（克隆后可直接取，5.2 MB） |
+| `dist/MyTVLite-1.0.6-sdk16-release.apk` | 仓库内同一份包（克隆后可直接取，5.3 MB） |
 | `app/` | 完整 Android 工程，可用 Android Studio 直接打开 |
 | `app/mytv-lite.jks` | 签名文件，密码 `mytvlite`，别名 `mytvlite` |
 
@@ -37,11 +44,11 @@
 
 ---
 
-## 二、为什么 4.4 能用（关键改造点）
+## 二、为什么 4.1 也能用（关键改造点）
 
 | 项目 | 上游做法 | 本项目做法 |
 | --- | --- | --- |
-| 最低版本 | minSdk 21+ | **minSdk 19**（Android 4.4） |
+| 最低版本 | minSdk 21+ | **minSdk 16**（Android 4.1，主线为 19） |
 | UI | Jetpack Compose（需要 API 21+、GPU 较强） | 原生 View + RecyclerView + 自绘 shape/selector，无 Material 依赖 |
 | 播放内核 | Media3 ExoPlayer / IJK / VLC | **ExoPlayer 2.18.7**（最后一条支持 API 16+ 的版本线）+ 系统 MediaPlayer 双内核可切换 |
 | 网络库 | OkHttp 4.x（API 21+） | **OkHttp 3.12.13**（API 9+），并强制打开 TLS 1.1/1.2 |
@@ -136,6 +143,24 @@
 | 首页宫格 / 设置列表 | 13sp / 16sp | 19sp / 21sp |
 
 开启关怀模式时会同时打开「打开软件直接播放」，长辈只需要记住一个开关。
+
+---
+
+## 四·六、Android 4.1 ~ 4.3 说明（本分支）
+
+minSdk 16 不是「改个数字」这么简单，几处老系统缺失的能力都做了兜底：
+
+| 能力 | 4.1~4.3 上的处理 |
+| --- | --- |
+| 列举挂载点 | `StorageManager.getStorageVolumes` 是 API 24 才有的，低版本整段跳过，改用 `/proc/mounts` + `/mnt/usb*`、`/mnt/udisk`、`/storage/XXXX-XXXX` 等厂商路径 |
+| TLS 1.2 | 4.1~4.3 默认不启用，仍由自写的 `Tls12SocketFactory` 手动打开，https 源可正常拉取 |
+| 矢量图标 | 走 `vectorDrawables.useSupportLibrary = true` + `AppCompatResources`，不在低版本上解析 `<vector>` 崩溃 |
+| 64K 方法数 | legacy `MultiDex.install()`，4.1 上照常分包 |
+| 存储权限 | `targetSdk 28`，沿用传统存储模型，不涉及分区存储 |
+
+**性能提醒**：4.1~4.3 的设备基本是 2012 年前后的单核/双核 + 512MB~1GB 内存，硬解普遍只到
+H.264 720p~1080p。HLS 多码率、HEVC 频道大概率会卡或黑屏，进设置把内核切「系统播放器」、
+解码切「软解优先」通常能救回来；再不行就说明这台机器确实到极限了。
 
 ---
 
