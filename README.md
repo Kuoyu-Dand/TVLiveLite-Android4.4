@@ -1,11 +1,11 @@
 # 电视直播 Lite（TVLiveLite）
 
 <p align="center">
-  <a href="../../releases/latest"><img src="docs/icon-showcase.png" alt="电视直播 Lite 图标与 TV banner" width="760"></a>
+  <a href="../../releases/tag/v1.0.6"><img src="docs/icon-showcase.png" alt="电视直播 Lite 图标与 TV banner" width="760"></a>
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/DOWNLOAD-APK-627CFF?style=for-the-badge&logo=android&logoColor=white" alt="下载 APK"></a>
+  <a href="../../releases/tag/v1.0.6"><img src="https://img.shields.io/badge/DOWNLOAD-APK-627CFF?style=for-the-badge&logo=android&logoColor=white" alt="下载 APK"></a>
   <img src="https://img.shields.io/badge/Android-4.1%2B-3F5AF0?style=for-the-badge" alt="最低 Android 4.1">
   <img src="https://img.shields.io/badge/UI-%E5%8E%9F%E7%94%9F%20View-555555?style=for-the-badge" alt="原生 View">
   <img src="https://img.shields.io/badge/License-MIT-2EA44F?style=for-the-badge" alt="MIT">
@@ -27,14 +27,14 @@
 
 ## 一、下载与产物
 
-直接装：到 [**Releases**](../../releases/latest) 下载 `MyTVLite-1.0.6-sdk16-release.apk`，
+直接装：到 [**v1.0.6 兼容版**](../../releases/tag/v1.0.6) 下载 `MyTVLite-1.0.6-sdk16-release.apk`，
 拷到 U 盘插到盒子上装，或者 `adb install -r MyTVLite-1.0.6-sdk16-release.apk`。
 
 > 名字里的 `sdk16` 就是「最低 API 16（Android 4.1）」的意思，和主线包功能一样。
 
 | 文件 | 说明 |
 | --- | --- |
-| [`Releases`](../../releases/latest) | **推荐**。签名包 + 校验值，版本历史一目了然 |
+| [`Releases`](../../releases/tag/v1.0.6) | **推荐**。签名包 + 校验值，版本历史一目了然 |
 | `dist/MyTVLite-1.0.6-sdk16-release.apk` | 仓库内同一份包（克隆后可直接取，5.3 MB） |
 | `app/` | 完整 Android 工程，可用 Android Studio 直接打开 |
 | `app/mytv-lite.jks` | 签名文件，密码 `mytvlite`，别名 `mytvlite` |
